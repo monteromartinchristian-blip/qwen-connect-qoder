@@ -26,7 +26,7 @@ const RAW_MODEL = {
   thinking_config: { enabled: { efforts: { low: {}, medium: {}, xhigh: {} } } },
 }
 
-test('toCatalogEntry prefija el id con la región y conserva las capacidades', () => {
+test('toCatalogEntry prefija el id con la región y anuncia la ventana mayor', () => {
   const entry = toCatalogEntry(
     {
       key: 'qmodel_38max',
@@ -36,7 +36,7 @@ test('toCatalogEntry prefija el id con la región y conserva las capacidades', (
       alwaysThinking: false,
       effortLevels: ['low', 'medium'],
       defaultContextWindow: 200000,
-      contextOptions: [200000],
+      contextOptions: [200000, 400000, 1000000],
       maxInputTokens: 200000,
       isDefault: true,
       isFree: false,
@@ -48,6 +48,24 @@ test('toCatalogEntry prefija el id con la región y conserva las capacidades', (
   assert.equal(entry.name, 'Qoder · Qwen3.8-Max')
   assert.equal(entry.vision, true)
   assert.equal(entry.alwaysThinking, false)
+  assert.equal(entry.contextWindow, 1000000, 'se anuncia la ventana máxima publicada')
+})
+
+test('un modelo con una sola ventana conserva ese valor', () => {
+  const entry = toCatalogEntry(
+    {
+      key: 'efficient',
+      name: 'Efficient',
+      isVL: false,
+      isReasoning: false,
+      effortLevels: [],
+      defaultContextWindow: 200000,
+      contextOptions: [200000],
+      maxInputTokens: 200000,
+    },
+    regionById('qoder'),
+  )
+  assert.equal(entry.contextWindow, 200000)
 })
 
 test('el catálogo se refresca desde el gateway y se guarda en disco', async () => {

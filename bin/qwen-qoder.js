@@ -27,13 +27,23 @@ import {
 } from '../lib/config.js'
 import { CredentialStore } from '../lib/credentials.js'
 import { extensionInstalled, installExtension, removeExtension } from '../lib/extension.js'
-import { installIntoQwen, qwenSettingsPath, statusLineCommand, uninstallFromQwen } from '../lib/qwen-settings.js'
+import {
+  applySpeedHook,
+  hasSpeedHook,
+  installIntoQwen,
+  qwenSettingsPath,
+  removeSpeedHook,
+  statusLineCommand,
+  uninstallFromQwen,
+  writeSettings,
+} from '../lib/qwen-settings.js'
 import { buildStatusLine } from '../lib/statusline.js'
 import { claimDailyBenefit, fetchUsage } from '../lib/usage.js'
 import { installService, preferredNode, serviceInstalled, uninstallService } from '../lib/service.js'
 import { REGIONS, regionById } from '../lib/regions.js'
 
 const BIN_PATH = fileURLToPath(import.meta.url)
+const TURN_SPEED_BIN = join(dirname(BIN_PATH), 'qwen-turn-speed.js')
 
 /** Analiza `--clave valor`, `--clave=valor` y banderas booleanas. */
 function parseArgs(argv) {
@@ -299,6 +309,34 @@ async function statusline(options) {
   else console.log(line)
 }
 
+/** `speedhook`: hook `Stop` que pinta la velocidad del turno. */
+function speedhook(options) {
+  const path = qwenSettingsPath()
+  let doc = { $version: 4 }
+  try {
+    doc = JSON.parse(readFileSync(path, 'utf8'))
+  } catch {
+    // Sin ajustes previos se crea un documento mínimo.
+  }
+  if (options.status === true) {
+    console.log(hasSpeedHook(doc) ? 'Hook de velocidad: activo' : 'Hook de velocidad: inactivo')
+    return
+  }
+  if (options.off === true) {
+    const { settings, removed } = removeSpeedHook(doc)
+    if (removed) writeSettings(path, settings)
+    console.log(removed ? 'Hook de velocidad retirado' : 'No estaba instalado')
+    return
+  }
+  const command = `"${preferredNode()}" "${TURN_SPEED_BIN}"`
+  const { settings } = applySpeedHook(doc, command)
+  const write = writeSettings(path, settings)
+  console.log(`Hook Stop instalado: ${command}`)
+  console.log(
+    write.changed ? `Ajustes actualizados${write.backup ? ` · copia: ${write.backup}` : ''}` : 'Los ajustes ya estaban al día',
+  )
+}
+
 /** Consulta el puente local. */
 async function bridgeHealth(config) {
   try {
@@ -467,6 +505,7 @@ Uso:
   qwen-qoder usage [--json]
   qwen-qoder checkin
   qwen-qoder statusline [--json]
+  qwen-qoder speedhook [--status|--off]
   qwen-qoder doctor [--json]
   qwen-qoder status [--json]
   qwen-qoder uninstall [--purge] [--settings RUTA]
@@ -496,6 +535,9 @@ try {
       break
     case 'statusline':
       await statusline(options)
+      break
+    case 'speedhook':
+      speedhook(options)
       break
     case 'doctor':
       await doctor(options)
