@@ -125,6 +125,30 @@ npm run verify:live   # usa la cuenta real: catálogo, turno y bucle de herramie
 modelo pide `run_shell`, le devuelve `Darwin` y exige una respuesta final. Si
 Qoder encola (código `10605`), reintenta respetando su `Retry-After`.
 
+## Qué se ve en Qwen Code (y qué no)
+
+Qwen Code **no tiene API de UI para extensiones**: una extensión puede aportar
+comandos, skills, contexto y servidores MCP, pero no dibujar una tarjeta como la
+del plugin de DSH. Esto es lo que hay, comprobado contra el runtime del Desktop:
+
+| En DSH | En Qwen Code |
+| --- | --- |
+| Tarjeta «Qoder quota» con paquetes y PAT | No existe: la extensión no puede pintar paneles |
+| Saldo en el pie de la barra lateral | `ui.statusLine` con `qwen-qoder statusline` — **solo lo pinta el CLI**; el shell del Desktop no renderiza esa clave |
+| Ajustes del plugin (PAT, check-in, refresco) | Sin UI: `qwen-qoder usage`, `qwen-qoder checkin`, `qwen-qoder install` |
+| Modelos en el selector | Sí: 14 entradas `qoder/…` en `modelProviders` |
+| Plugin listado | Sí: extensión `qwen-connect-qoder` habilitada, con `/qoder:uso`, `/qoder:modelos`, `/qoder:checkin`, la skill `qwen-connect-qoder:uso` y el MCP `qoder` conectado |
+
+Para ver el consumo **sin gastar créditos** (no llama al modelo):
+
+```sh
+qwen-qoder usage      # tabla completa: plan, add-on, paquetes, check-in, campañas
+qwen-qoder statusline # una línea para el pie del CLI
+```
+
+Dentro de una sesión del CLI, `!qwen-qoder usage` ejecuta el comando en local y
+muestra la salida en el transcript sin consumir tokens.
+
 ## Límites conocidos
 
 - **La cola de Qoder es real.** Una petición puede esperar hasta 240 s dentro

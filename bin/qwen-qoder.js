@@ -26,8 +26,11 @@ import {
   readConfig,
 } from '../lib/config.js'
 import { CredentialStore } from '../lib/credentials.js'
-import { installIntoQwen, qwenSettingsPath, uninstallFromQwen } from '../lib/qwen-settings.js'
-import { installService, serviceInstalled, uninstallService } from '../lib/service.js'
+import { extensionInstalled, installExtension, removeExtension } from '../lib/extension.js'
+import { installIntoQwen, qwenSettingsPath, statusLineCommand, uninstallFromQwen } from '../lib/qwen-settings.js'
+import { buildStatusLine } from '../lib/statusline.js'
+import { claimDailyBenefit, fetchUsage } from '../lib/usage.js'
+import { installService, preferredNode, serviceInstalled, uninstallService } from '../lib/service.js'
 import { REGIONS, regionById } from '../lib/regions.js'
 
 const BIN_PATH = fileURLToPath(import.meta.url)
@@ -139,12 +142,20 @@ async function install(options) {
     baseUrl,
     token: config.token,
     path: typeof options.settings === 'string' ? options.settings : undefined,
+    statusLineCommand: options['no-statusline'] === true ? undefined : statusLineCommand(preferredNode(), BIN_PATH),
   })
   let service
   if (process.platform === 'darwin' && options['no-service'] !== true) {
     service = installService({ script: BIN_PATH, port: config.port })
   }
+  const extension = installExtension()
   console.log(`Modelos publicados: ${settings.added} (retirados ${settings.removed}) en ${settings.path}`)
+  console.log(`Extensión de Qwen Code: ${extension.files} ficheros en ${extension.path}`)
+  console.log(
+    settings.statusLine?.applied === true
+      ? `Barra de estado: saldo de Qoder en el pie (${statusLineCommand(preferredNode(), BIN_PATH)})`
+      : `Barra de estado: no instalada${settings.statusLine?.reason ? ` · ${settings.statusLine.reason}` : ''}`,
+  )
   console.log(`Endpoint: ${baseUrl}  ·  envKey: ${ENV_KEY}`)
   if (settings.changed) {
     console.log(settings.backup ? `Copia de los ajustes previos: ${settings.backup}` : 'Ajustes creados')
@@ -184,6 +195,108 @@ async function models(options) {
     console.log(`${model.id.padEnd(28)} ${model.displayName.padEnd(20)} ${flags.join(' ')}`)
   }
   if (result.error) console.log(`\nAviso: ${result.error}`)
+}
+
+/** Formatea un tramo de cuota para la terminal. */
+function quotaLine(label, quota) {
+  if (quota === undefined) return null
+  const percent = Math.round(quota.percentage * 100)
+  return `${label}: ${quota.remaining}/${quota.total} ${quota.unit} · ${percent}% usado`
+}
+
+/** `usage`: consumo real de cada región. */
+async function usage(options) {
+  const config = ensureConfig()
+  const { regions, credentials } = buildStack(config)
+  const rows = []
+  for (const region of regions) {
+    const credential = await credentials.get(region)
+    if (!credential) {
+      rows.push({ region: region.id, displayName: region.displayName, status: 'not_signed_in' })
+      continue
+    }
+    try {
+      const current = await fetchUsage(region, credential)
+      rows.push({
+        region: region.id,
+        displayName: region.displayName,
+        status: current === undefined ? 'no_data' : 'ok',
+        account: { name: credential.name, email: credential.email },
+        usage: current,
+      })
+    } catch (error) {
+      rows.push({ region: region.id, displayName: region.displayName, status: 'error', error: String(error?.message ?? error) })
+    }
+  }
+  if (options.json === true) {
+    console.log(JSON.stringify({ regions: rows }, null, 2))
+    return
+  }
+  for (const row of rows) {
+    if (row.status !== 'ok') {
+      console.log(`${row.displayName}: ${row.status}${row.error ? ` · ${row.error}` : ''}`)
+      continue
+    }
+    const usage = row.usage
+    console.log(`${row.displayName} · ${row.account.name} <${row.account.email}>  [${usage.userType || 'plan desconocido'}]`)
+    for (const line of [
+      quotaLine('  Cuota del plan', usage.userQuota),
+      quotaLine('  Créditos add-on', usage.addOnQuota),
+      ...usage.dedicatedPackages.map((pack) => quotaLine(`  ${pack.name || pack.id}`, pack)),
+    ].filter((line) => line !== null)) {
+      console.log(line)
+    }
+    if (usage.isQuotaExceeded) console.log('  ⚠ Cuota agotada: el gateway rechazará peticiones')
+    const checkin = usage.checkin
+    if (checkin?.active === true) {
+      console.log(
+        `  Registro diario: ${checkin.todayCheckedIn ? 'ya cobrado hoy' : 'disponible'} · ` +
+          `${checkin.amount ?? '?'} ${checkin.unit ?? 'credits'}` +
+          `${checkin.validDays ? ` · válido ${checkin.validDays} días` : ''}`,
+      )
+    } else {
+      console.log('  Registro diario: sin ronda activa')
+    }
+    if (usage.campaigns.length > 0) {
+      console.log(`  Campañas: ${usage.campaigns.map((campaign) => campaign.title || campaign.key).join(' · ')}`)
+    }
+  }
+}
+
+/** `checkin`: reclama la ronda diaria (única escritura sobre la cuenta). */
+async function checkin(options) {
+  const config = ensureConfig()
+  const { regions, credentials } = buildStack(config)
+  for (const region of regions) {
+    const credential = await credentials.get(region)
+    if (!credential) {
+      console.log(`${region.displayName}: sin sesión`)
+      continue
+    }
+    try {
+      const result = await claimDailyBenefit(region, credential)
+      if (result.claimed === true && result.replayed !== true) {
+        console.log(`${region.displayName}: +${result.amount ?? 0} créditos`)
+      } else if (result.replayed === true) {
+        console.log(`${region.displayName}: la ronda de hoy ya estaba cobrada (sin cambios)`)
+      } else {
+        console.log(`${region.displayName}: ${result.reason ?? 'sin cambios'}`)
+      }
+    } catch (error) {
+      console.error(`${region.displayName}: ${error?.message ?? error}`)
+      process.exitCode = 1
+    }
+  }
+  void options
+}
+
+/** `statusline`: una línea con el saldo para el pie de Qwen Code. */
+async function statusline(options) {
+  const config = ensureConfig()
+  const { regions, credentials } = buildStack(config)
+  const { line, cached } = await buildStatusLine({ credentials, regions })
+  if (options.json === true) console.log(JSON.stringify({ line, cached }))
+  else console.log(line)
 }
 
 /** Consulta el puente local. */
@@ -234,12 +347,15 @@ async function doctor(options) {
 
   const settingsPath = qwenSettingsPath()
   let settingsCheck = { status: 'BLOCKED', detail: `no existe ${settingsPath}` }
+  let hasStatusLine = false
   if (existsSync(settingsPath)) {
     try {
       const doc = JSON.parse(readFileSync(settingsPath, 'utf8'))
       const entries = Array.isArray(doc?.modelProviders?.openai) ? doc.modelProviders.openai : []
       const own = entries.filter((entry) => typeof entry?.id === 'string' && entry.id.startsWith('qoder'))
       const hasKey = typeof doc?.env?.[ENV_KEY] === 'string' && doc.env[ENV_KEY].length > 0
+      hasStatusLine =
+        typeof doc?.ui?.statusLine?.command === 'string' && doc.ui.statusLine.command.includes('qwen-qoder.js')
       settingsCheck = {
         status: own.length > 0 && hasKey ? 'PASS' : 'FAIL',
         detail: `${own.length} entradas del puente · envKey ${hasKey ? 'presente' : 'ausente'}`,
@@ -248,7 +364,25 @@ async function doctor(options) {
       settingsCheck = { status: 'FAIL', detail: `no se pudo leer: ${error?.message ?? error}` }
     }
   }
-  push('ajustes de Qwen', settingsCheck.status, settingsCheck.detail)
+  push(
+    'ajustes de Qwen',
+    settingsCheck.status,
+    settingsCheck.detail,
+  )
+
+  push(
+    'barra de estado',
+    hasStatusLine ? 'PASS' : 'BLOCKED',
+    hasStatusLine ? 'saldo en el pie (ui.statusLine)' : 'no configurada (qwen-qoder install)',
+  )
+
+  push(
+    'extensión',
+    extensionInstalled() ? 'PASS' : 'BLOCKED',
+    extensionInstalled()
+      ? 'instalada en ~/.qwen/extensions/qwen-connect-qoder (comandos /qoder:* y herramientas qoder_*)'
+      : 'no instalada (qwen-qoder install)',
+  )
 
   push(
     'arranque automático',
@@ -309,6 +443,9 @@ async function uninstall(options) {
     path: typeof options.settings === 'string' ? options.settings : undefined,
   })
   console.log(`Entradas retiradas de Qwen Code: ${result.removed}${result.changed ? ' (ajustes actualizados)' : ''}`)
+  if (result.statusLineRemoved) console.log('Barra de estado retirada de los ajustes')
+  const extension = removeExtension()
+  console.log(extension.removed ? `Extensión retirada: ${extension.path}` : 'No había extensión instalada')
   if (process.platform === 'darwin') {
     const service = uninstallService()
     console.log(service.removed ? 'LaunchAgent retirado' : 'No había LaunchAgent')
@@ -327,6 +464,9 @@ Uso:
   qwen-qoder serve [--port N] [--region qoder|qoder-cn] [--quiet]
   qwen-qoder install [--port N] [--region …] [--no-service] [--settings RUTA]
   qwen-qoder models [--json]
+  qwen-qoder usage [--json]
+  qwen-qoder checkin
+  qwen-qoder statusline [--json]
   qwen-qoder doctor [--json]
   qwen-qoder status [--json]
   qwen-qoder uninstall [--purge] [--settings RUTA]
@@ -347,6 +487,15 @@ try {
       break
     case 'models':
       await models(options)
+      break
+    case 'usage':
+      await usage(options)
+      break
+    case 'checkin':
+      await checkin(options)
+      break
+    case 'statusline':
+      await statusline(options)
       break
     case 'doctor':
       await doctor(options)

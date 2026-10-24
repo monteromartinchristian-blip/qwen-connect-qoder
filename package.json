@@ -2,7 +2,7 @@
   "name": "qwen-connect-qoder",
   "displayName": "Qwen Connect Qoder",
   "description": "Expone los modelos de una cuenta Qoder ya autenticada en el escritorio como un proveedor OpenAI-compatible local para Qwen Code.",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "author": "Christian Montero",
   "license": "MIT",
   "type": "module",

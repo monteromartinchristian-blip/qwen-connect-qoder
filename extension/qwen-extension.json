@@ -1,0 +1,16 @@
+{
+  "name": "qwen-connect-qoder",
+  "displayName": "Qoder",
+  "version": "0.3.0",
+  "description": "Cuenta, consumo de créditos, registro diario y catálogo de Qoder dentro de Qwen Code.",
+  "contextFileName": "QWEN.md",
+  "mcpServers": {
+    "qoder": {
+      "command": "/bin/sh",
+      "args": [
+        "${extensionPath}/run-mcp.sh"
+      ],
+      "timeout": 20000
+    }
+  }
+}
