@@ -1,0 +1,40 @@
+{
+  "name": "qwen-connect-qoder",
+  "displayName": "Qwen Connect Qoder",
+  "description": "Expone los modelos de una cuenta Qoder ya autenticada en el escritorio como un proveedor OpenAI-compatible local para Qwen Code.",
+  "version": "0.1.0",
+  "author": "Christian Montero",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "bin": {
+    "qwen-qoder": "./bin/qwen-qoder.js"
+  },
+  "exports": {
+    ".": "./lib/bridge.js",
+    "./upstream": "./lib/upstream.js",
+    "./credentials": "./lib/credentials.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=85 --test-coverage-branches=65 --test-coverage-functions=75 \"test/*.test.js\"",
+    "doctor": "node bin/qwen-qoder.js doctor",
+    "verify:live": "node scripts/verify-live.mjs"
+  },
+  "keywords": [
+    "qwen-code",
+    "qoder",
+    "openai-compatible",
+    "provider",
+    "bridge"
+  ]
+}

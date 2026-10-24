@@ -1,0 +1,32 @@
+# Aviso de atribución
+
+Este proyecto es una **adaptación para Qwen Code** del plugin
+[`dsh-connect-qoder`](https://github.com/hdhgsysh/dsh-connect-qoder) (MIT),
+publicado originalmente para DeepSeek Harness, y del fork
+[`eghrhegpe/dsh-connect-qoder`](https://github.com/eghrhegpe/dsh-connect-qoder)
+(MIT), del que procede la versión 0.4.2 aquí estudiada.
+
+Se reutilizan y adaptan, con cambios sustanciales:
+
+- la reproducción del protocolo privado de Qoder (firma COSY, base64 permutado,
+  SSE de doble sobre) de `lib/upstream.js`;
+- la clasificación de errores del upstream de `lib/errors.js`;
+- el esquema de descifrado OSCrypt y la lectura de `auth.v1.dat` de
+  `lib/credentials.js`.
+
+Cambios principales respecto del original:
+
+- se elimina la dependencia del host DeepSeek Harness (Cordis, tarjeta de
+  ajustes, `PiAiAdapter`, rutas del panel) y se sustituye por un endpoint
+  OpenAI-compatible local que Qwen Code consume como `modelProviders.openai`;
+- se **implementa la cadena de credenciales de macOS** (Llavero + PBKDF2-SHA1 +
+  AES-128-CBC) que el original dejaba como hueco declarado, y un camino Linux
+  (libsecret / constante `peanuts`);
+- se añade descubrimiento e instalación en `~/.qwen/settings.json`, CLI de
+  diagnóstico, arranque con LaunchAgent y verificación viva del bucle de
+  herramientas;
+- se recortan las funciones que solo existían para la tarjeta del host
+  (consumo, campañas, registro diario, promociones, imagen por modelo).
+
+El proyecto original se distribuye bajo licencia MIT según su `package.json`;
+este trabajo conserva esa licencia y añade la atribución anterior.
